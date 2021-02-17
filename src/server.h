@@ -130,4 +130,8 @@ int bhttp_add_regex_handler(bhttp_server *server,
                             const char *uri,
                             int (*cb)(bhttp_request *, bhttp_response *, bvec *));
 
+// Only need to be called on win32 platforms
+int bhttp_init(void);
+void bhttp_exit(void);
+
 #endif /* BITTYHTTP_SERVER_H */

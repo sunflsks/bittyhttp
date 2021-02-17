@@ -15,7 +15,7 @@
 #include <sys/socket.h>
 #endif
 #include <sys/types.h>
-#if __APPLE__
+#ifdef __APPLE__
     #include <sys/types.h>
     #include <sys/socket.h>
     #include <sys/uio.h>
@@ -416,17 +416,18 @@ send_file(int sock, const char *file_path, size_t file_size, int use_sendfile)
         }
         off_t len = 0;
         ssize_t ret;
-        
+
+//TransmitFile does it all in one go
+#ifdef __WIN32__
+	ret = 0;
+	if (TransmitFile(sock, (void*)_get_osfhandle(f), len, 0, NULL, NULL, 0) != TRUE) ret = -1;
+#else
+
 #ifdef __linux__
         while ((ret = sendfile(sock, f, &len, file_size-sent)) > 0)
 #elif __APPLE__
         while(sendfile(f, sock, len, &ret, NULL, 0) > 0)
-#elif __WIN32__
-	ret = 0;
-	if (TransmitFile(sock, (void*)_get_osfhandle(f), len, 0, NULL, NULL, 0) != TRUE) ret = -1;
 #endif
-//TransmitFile does it all in one go
-#ifndef __WIN32__
         {
             sent += ret;
             if (sent >= (ssize_t)file_size) break;
@@ -782,4 +783,21 @@ bhttp_server_run(bhttp_server *server)
 //        pthread_join(args->thread, NULL);
 //        return;
     }
+}
+
+int bhttp_init(void) {
+    #ifdef __WIN32__
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2,0), &wsa_data) != 0) {
+        fprintf(stderr, "Couldn't initialize sockets!\n");
+        return -1;
+    }
+    #endif
+    return 0;
+}
+
+void bhttp_exit(void) {
+    #ifdef __WIN32__
+    WSACleanup();
+    #endif
 }
