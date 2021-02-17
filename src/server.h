@@ -9,8 +9,14 @@
 #ifndef BITTYHTTP_SERVER_H
 #define BITTYHTTP_SERVER_H
 
+#include <pthread.h>
+#ifdef __WIN32__
+#include <winsock2.h>
+#include <pcre2posix.h>
+#else
 #include <regex.h>
 #include <sys/socket.h>
+#endif
 #include "request.h"
 #include "respond.h"
 #include "mime_types.h"

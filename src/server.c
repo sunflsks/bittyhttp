@@ -7,16 +7,30 @@
  */
 
 #include <fcntl.h>
+#ifdef __WIN32__
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <sys/types.h>
-#include <sys/sendfile.h>
+#if __APPLE__
+    #include <sys/types.h>
+    #include <sys/socket.h>
+    #include <sys/uio.h>
+#elif __linux__
+    #include <sys/sendfile.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#ifndef __WIN32__
 #include <netdb.h>
 #include <arpa/inet.h>
+#endif
 #include <pthread.h>
 #include <sys/stat.h>
 #include <signal.h>
@@ -26,6 +40,10 @@
 #include "http_parser.h"
 
 #define MAX_REGEX_MATCHES 10
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 /* TODO: handle HEAD requests properly */
 
@@ -207,13 +225,22 @@ bhttp_server_bind(bhttp_server *server)
             continue;
         }
         int turnon = 1;
+        #ifdef __WIN32__
+        if (setsockopt(server->sock, SOL_SOCKET, SO_REUSEADDR, (char*)&turnon, sizeof(int)) == -1) {
+            closesocket(server->sock);
+        #else
         if (setsockopt(server->sock, SOL_SOCKET, SO_REUSEADDR, &turnon, sizeof(int)) == -1) {
             close(server->sock);
+        #endif
             freeaddrinfo(servinfo);
             return 1;
         }
         if (bind(server->sock, p->ai_addr, p->ai_addrlen) == -1) {
+            #ifdef __WIN32__
+            closesocket(server->sock);
+            #else
             close(server->sock);
+            #endif
             perror("error binding socket");
             continue;
         }
@@ -364,6 +391,10 @@ static int
 send_buffer(int sock, const char *buf, size_t len)
 {
     /* send buffer data */
+#ifdef __APPLE__
+    int optval = 1;
+    setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(int));
+#endif
     ssize_t sent = send(sock, buf, len, MSG_NOSIGNAL);
     if ( sent < 0 ) return 1;
     if (sent < len) return 1;
@@ -385,11 +416,22 @@ send_file(int sock, const char *file_path, size_t file_size, int use_sendfile)
         }
         off_t len = 0;
         ssize_t ret;
+        
+#ifdef __linux__
         while ((ret = sendfile(sock, f, &len, file_size-sent)) > 0)
+#elif __APPLE__
+        while(sendfile(f, sock, len, &ret, NULL, 0) > 0)
+#elif __WIN32__
+	ret = 0;
+	if (TransmitFile(sock, (void*)_get_osfhandle(f), len, 0, NULL, NULL, 0) != TRUE) ret = -1;
+#endif
+//TransmitFile does it all in one go
+#ifndef __WIN32__
         {
             sent += ret;
             if (sent >= (ssize_t)file_size) break;
         }
+#endif
         close(f);
         if (ret == -1)
         {
@@ -423,7 +465,11 @@ send_file(int sock, const char *file_path, size_t file_size, int use_sendfile)
             }
             sent = 0;
             ssize_t ret;
+            #ifdef __WIN32__
+            while ((ret = send(sock, buf+sent, len-sent, 0)) > 0)
+            #else
             while ((ret = send(sock, buf+sent, len-sent, MSG_NOSIGNAL)) > 0)
+            #endif
             {
                 sent += ret;
                 if (sent >= (ssize_t)file_size) break;
@@ -679,7 +725,11 @@ do_connection(void * arg)
         bhttp_request_free(&req);
     } while (req.keep_alive == BHTTP_KEEP_ALIVE);
     /* cleanup */
+    #ifdef __WIN32__
+    closesocket(sock);
+    #else
     close(sock);
+    #endif
     free(arg);
     return NULL;
 }

@@ -8,7 +8,12 @@ CC := gcc
 # CFLAGS := -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -std=c99 -O3
 CFLAGS := -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L -std=c99 -O3
 CWARN := -Wall
+
 INC := -lpthread -lcurl
+
+ifeq ($(OS),Windows_NT)
+INC +=  -lws2_32 -lpcre2-posix -lmswsock
+endif
 
 all: $(proj)
 
